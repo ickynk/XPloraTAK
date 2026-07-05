@@ -1,0 +1,35 @@
+configuration:
+  auth:
+    name: Xplora account
+    description: >-
+      Credentials for the Xplora app account. Fill in either email, or
+      country_code + phone_number (no '+'), plus the password.
+  user_lang:
+    name: Account language
+    description: Locale sent to the Xplora API, e.g. en-US or de-DE.
+  timezone:
+    name: Timezone
+    description: IANA timezone name of your account, e.g. America/New_York.
+  poll_interval:
+    name: Poll interval (seconds)
+    description: >-
+      How often to read the last reported location. Keep this at 300 or
+      higher to reduce ban risk. Minimum 120.
+  watch_ids:
+    name: Watch IDs filter
+    description: >-
+      Optional list of watch IDs (wuid) to track. Empty tracks all watches
+      on the account. IDs are printed in the add-on log at startup.
+  mqtt:
+    name: MQTT output
+    description: >-
+      Publishes device_tracker and battery sensor entities via MQTT
+      discovery. Leave host empty to auto-discover the Mosquitto add-on.
+  tak:
+    name: TAK output
+    description: >-
+      Optional direct Cursor-on-Target delivery to a TAK server (tcp, tls
+      or udp). Certificate paths are read from /ssl.
+  log_level:
+    name: Log level
+    description: Verbosity of the add-on log.

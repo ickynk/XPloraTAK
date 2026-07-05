@@ -1,0 +1,115 @@
+"""Cursor-on-Target (CoT) generation and delivery to a TAK server.
+
+Builds standard CoT 2.0 event XML from an Xplora location fix and sends it
+over TCP (default, TAK port 8087), TLS (TAK port 8089, with optional client
+certificate) or UDP.
+"""
+
+from __future__ import annotations
+
+import logging
+import socket
+import ssl
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+from xml.sax.saxutils import escape, quoteattr
+
+_LOGGER = logging.getLogger(__name__)
+
+COT_TIME_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
+UNKNOWN = "9999999.0"
+
+
+def build_cot(
+    uid: str,
+    callsign: str,
+    lat: float,
+    lon: float,
+    cot_type: str = "a-f-G-U-C",
+    accuracy_m: Optional[float] = None,
+    battery: Optional[int] = None,
+    fix_time: Optional[datetime] = None,
+    stale_seconds: int = 900,
+    remarks: str = "",
+) -> bytes:
+    """Return a CoT <event> document as UTF-8 bytes."""
+    now = datetime.now(timezone.utc)
+    start = fix_time or now
+    stale = now + timedelta(seconds=stale_seconds)
+
+    ce = f"{accuracy_m:.1f}" if accuracy_m and accuracy_m > 0 else UNKNOWN
+
+    detail_parts = [f"<contact callsign={quoteattr(callsign)}/>"]
+    if battery is not None:
+        detail_parts.append(f'<status battery="{int(battery)}"/>')
+    if remarks:
+        detail_parts.append(f"<remarks>{escape(remarks)}</remarks>")
+    detail = "".join(detail_parts)
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f"<event version=\"2.0\" uid={quoteattr(uid)} type={quoteattr(cot_type)} "
+        f'how="m-g" time="{now.strftime(COT_TIME_FMT)[:-4]}Z" '
+        f'start="{start.strftime(COT_TIME_FMT)[:-4]}Z" '
+        f'stale="{stale.strftime(COT_TIME_FMT)[:-4]}Z">'
+        f'<point lat="{lat:.7f}" lon="{lon:.7f}" hae="{UNKNOWN}" '
+        f'ce="{ce}" le="{UNKNOWN}"/>'
+        f"<detail>{detail}</detail>"
+        "</event>"
+    )
+    return xml.encode("utf-8")
+
+
+class TakSender:
+    """Fire-and-forget CoT delivery. A fresh connection is made per batch,
+    which is fine at multi-minute polling intervals and avoids stale-socket
+    handling."""
+
+    def __init__(self, options: dict[str, Any]) -> None:
+        self.host: str = options.get("host") or ""
+        self.port: int = int(options.get("port") or 8087)
+        self.protocol: str = (options.get("protocol") or "tcp").lower()
+        self.tls_ca_file: str = options.get("tls_ca_file") or ""
+        self.tls_cert_file: str = options.get("tls_cert_file") or ""
+        self.tls_key_file: str = options.get("tls_key_file") or ""
+        self.tls_verify: bool = bool(options.get("tls_verify", True))
+        if not self.host:
+            raise ValueError("TAK output enabled but tak.host is not set")
+
+    def send(self, events: list[bytes]) -> None:
+        if not events:
+            return
+        payload = b"".join(events)
+        if self.protocol == "udp":
+            self._send_udp(events)
+        elif self.protocol == "tls":
+            self._send_stream(payload, use_tls=True)
+        else:
+            self._send_stream(payload, use_tls=False)
+        _LOGGER.debug("Sent %d CoT event(s) to %s:%d", len(events), self.host, self.port)
+
+    def _send_udp(self, events: list[bytes]) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            for event in events:
+                sock.sendto(event, (self.host, self.port))
+
+    def _send_stream(self, payload: bytes, use_tls: bool) -> None:
+        raw = socket.create_connection((self.host, self.port), timeout=15)
+        try:
+            if use_tls:
+                context = ssl.create_default_context(
+                    cafile=self.tls_ca_file or None
+                )
+                if not self.tls_verify:
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+                if self.tls_cert_file:
+                    context.load_cert_chain(
+                        self.tls_cert_file, self.tls_key_file or None
+                    )
+                sock = context.wrap_socket(raw, server_hostname=self.host)
+            else:
+                sock = raw
+            sock.sendall(payload)
+        finally:
+            raw.close()
