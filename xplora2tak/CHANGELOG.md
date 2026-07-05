@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.1
+
+- Fix "certificate verify failed: Hostname mismatch" when connecting to a
+  TAK server through a hostname its certificate wasn't issued for (the
+  normal case with TAK's internal CA). The CA chain is still fully
+  verified, but the hostname comparison is now skipped by default —
+  matching ATAK/iTAK behavior. Re-enable strict matching with
+  `tls_check_hostname: true`.
+- TLS verification failures now log an actionable hint (hostname mismatch
+  vs. untrusted CA) instead of the raw OpenSSL error alone.
+
 ## 1.3.0
 
 - **Native PKCS#12 support**: point `tls_p12_file` (+ `tls_p12_password`)
