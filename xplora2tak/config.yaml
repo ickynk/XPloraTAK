@@ -1,0 +1,78 @@
+name: Xplora → MQTT / TAK Bridge
+version: "1.0.0"
+slug: xplora2tak
+description: >-
+  Pulls watch locations from the Xplora cloud API and publishes them as
+  Home Assistant device_tracker entities via MQTT, and/or directly to a
+  TAK server as Cursor-on-Target (CoT) events.
+url: https://github.com/ickynk/XPloraTAK
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+hassio_api: true
+services:
+  - mqtt:want
+map:
+  - ssl:ro
+  - share:ro
+options:
+  auth:
+    email: ""
+    country_code: ""
+    phone_number: ""
+    password: ""
+  user_lang: en-US
+  timezone: UTC
+  poll_interval: 300
+  watch_ids: []
+  mqtt:
+    enabled: true
+    host: ""
+    port: 1883
+    username: ""
+    password: ""
+  tak:
+    enabled: false
+    host: ""
+    port: 8087
+    protocol: tcp
+    cot_type: a-f-G-U-C
+    stale_seconds: 900
+    callsign_prefix: ""
+    tls_ca_file: ""
+    tls_cert_file: ""
+    tls_key_file: ""
+    tls_verify: true
+  log_level: info
+schema:
+  auth:
+    email: "str?"
+    country_code: "str?"
+    phone_number: "str?"
+    password: password
+  user_lang: str
+  timezone: str
+  poll_interval: int(120,86400)
+  watch_ids:
+    - str
+  mqtt:
+    enabled: bool
+    host: "str?"
+    port: port
+    username: "str?"
+    password: "password?"
+  tak:
+    enabled: bool
+    host: "str?"
+    port: port
+    protocol: list(tcp|tls|udp)
+    cot_type: str
+    stale_seconds: int(60,86400)
+    callsign_prefix: "str?"
+    tls_ca_file: "str?"
+    tls_cert_file: "str?"
+    tls_key_file: "str?"
+    tls_verify: bool
+  log_level: list(debug|info|warning|error)
