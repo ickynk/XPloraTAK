@@ -8,6 +8,7 @@ certificate) or UDP.
 from __future__ import annotations
 
 import logging
+import os
 import socket
 import ssl
 from datetime import datetime, timedelta, timezone
@@ -91,9 +92,33 @@ class TakSender:
         self.tls_ca_file: str = options.get("tls_ca_file") or ""
         self.tls_cert_file: str = options.get("tls_cert_file") or ""
         self.tls_key_file: str = options.get("tls_key_file") or ""
+        self.tls_p12_file: str = options.get("tls_p12_file") or ""
+        self.tls_p12_password: str = options.get("tls_p12_password") or ""
         self.tls_verify: bool = bool(options.get("tls_verify", True))
         if not self.host:
             raise ValueError("TAK output enabled but tak.host is not set")
+
+        if self.protocol == "tls":
+            missing = [
+                f"{name}: {path}"
+                for name, path in (
+                    ("tls_ca_file", self.tls_ca_file),
+                    ("tls_cert_file", self.tls_cert_file),
+                    ("tls_key_file", self.tls_key_file),
+                    ("tls_p12_file", self.tls_p12_file),
+                )
+                if path and not os.path.isfile(path)
+            ]
+            if missing:
+                raise ValueError(
+                    "TLS certificate file(s) not found inside the add-on: "
+                    + "; ".join(missing)
+                    + ". Put certificates in Home Assistant's ssl folder and "
+                    "reference them as /ssl/<filename> (the add-on can only "
+                    "see /ssl and /share)."
+                )
+            if self.tls_p12_file:
+                self._load_p12()
         # The classic misconfiguration: TAK Server listens for plain TCP on
         # 8087 and TLS (client certs required) on 8089. Bytes sent with the
         # wrong protocol are silently discarded server-side, so warn loudly.
@@ -108,6 +133,54 @@ class TakSender:
                 "tak.port 8087 is normally the plain-TCP input but "
                 "tak.protocol is 'tls' - set protocol: tcp or port: 8089."
             )
+
+    def _load_p12(self) -> None:
+        """Extract client cert/key (and CA chain) from a PKCS#12 bundle, as
+        handed out by TAK Server enrollment / data packages, into PEM files
+        the ssl module can load."""
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+            pkcs12,
+        )
+
+        with open(self.tls_p12_file, "rb") as fh:
+            blob = fh.read()
+        password = self.tls_p12_password.encode() or None
+        try:
+            key, cert, extra_certs = pkcs12.load_key_and_certificates(blob, password)
+        except ValueError as exc:
+            raise ValueError(
+                f"Could not read {self.tls_p12_file}: {exc}. Check "
+                "tls_p12_password (TAK Server bundles often use 'atakatak')."
+            ) from exc
+        if key is None or cert is None:
+            raise ValueError(
+                f"{self.tls_p12_file} does not contain a client key + "
+                "certificate pair"
+            )
+
+        pem_dir = os.environ.get("XPLORA2TAK_DATA", "/data")
+        cert_path = os.path.join(pem_dir, "tak_client.pem")
+        with open(cert_path, "wb") as fh:
+            fh.write(cert.public_bytes(Encoding.PEM))
+            fh.write(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+        os.chmod(cert_path, 0o600)
+        self.tls_cert_file = cert_path
+        self.tls_key_file = ""
+
+        if extra_certs and not self.tls_ca_file:
+            ca_path = os.path.join(pem_dir, "tak_ca.pem")
+            with open(ca_path, "wb") as fh:
+                for ca in extra_certs:
+                    fh.write(ca.public_bytes(Encoding.PEM))
+            self.tls_ca_file = ca_path
+        _LOGGER.info(
+            "Loaded client certificate from %s (CN=%s)",
+            self.tls_p12_file,
+            cert.subject.rfc4514_string(),
+        )
 
     def send(self, events: list[bytes]) -> None:
         if not events:
