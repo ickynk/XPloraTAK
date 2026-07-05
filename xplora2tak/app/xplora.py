@@ -142,9 +142,10 @@ class XploraClient:
                 "Provide a password plus either an email address or "
                 "country_code + phone_number in the add-on configuration."
             )
-        # Normalize: stray whitespace and a '+' on the country code are the
-        # most common config mistakes and the API rejects them.
-        self._email = (email or "").strip()
+        # Normalize: stray whitespace, a '+' on the country code and
+        # mixed-case email are the most common config mistakes; the API
+        # matches the email exactly, so lowercase it like the app does.
+        self._email = (email or "").strip().lower()
         self._country_code = (country_code or "").strip().lstrip("+")
         self._phone_number = (phone_number or "").strip().replace(" ", "")
         self._password_md5 = hashlib.md5(password.encode()).hexdigest()

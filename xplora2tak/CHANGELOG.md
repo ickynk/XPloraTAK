@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2
+
+- Lowercase the configured email address before sign-in. The Xplora API
+  matches emails exactly against the (lowercased) stored value, so a
+  mixed-case email like `Name@gmail.com` failed with "Authentication
+  failed." even though the phone app accepted it.
+
 ## 1.0.1
 
 - Fix "Authentication failed." on sign-in: unused login fields are now sent
