@@ -174,6 +174,15 @@ false` and consume the tracker entity in Node-RED, e.g. with a
 `server-state-changed` node watching `device_tracker.xplora_<name>`; latitude
 and longitude are in `msg.data.attributes`.
 
+## Updating
+
+New versions land on the repository's default branch; Home Assistant
+re-reads it periodically. To pull an update immediately: **Settings →
+Add-ons → Add-on store → ⋮ (top right) → Check for updates**, then press
+*Update* on the add-on page. Updating **preserves your configuration** —
+never uninstall/reinstall to update, as uninstalling wipes the saved
+options and the cached Xplora token.
+
 ## Troubleshooting
 
 - **"Sign-in failed" / "Authentication failed."** — the API rejected the

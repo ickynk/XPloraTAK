@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.1
+
+- All configuration keys are now optional in the add-on schema. Previous
+  releases added required keys, which made the Supervisor reject options
+  saved by an older version and forced re-entering the configuration
+  after updates. From this version on, saved options survive every
+  update; the app applies sensible defaults for anything unset.
+
 ## 1.4.0
 
 - **Persistent TAK connection with acceptance detection.** The sender now

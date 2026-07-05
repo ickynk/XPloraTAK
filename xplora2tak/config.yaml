@@ -1,5 +1,5 @@
 name: Xplora → MQTT / TAK Bridge
-version: "1.4.0"
+version: "1.4.1"
 slug: xplora2tak
 description: >-
   Pulls watch locations from the Xplora cloud API and publishes them as
@@ -56,43 +56,47 @@ options:
     tls_verify: true
     tls_check_hostname: false
   log_level: info
+# Every key is optional on purpose: the app applies its own defaults, and
+# optional keys mean a schema addition in a future version can never
+# invalidate previously saved options (which would force users to re-enter
+# their configuration after an update).
 schema:
   auth:
     email: "str?"
     country_code: "str?"
     phone_number: "str?"
-    password: password
-  user_lang: str
-  timezone: str
-  poll_interval: int(120,86400)
+    password: "password?"
+  user_lang: "str?"
+  timezone: "str?"
+  poll_interval: "int(120,86400)?"
   watch_ids:
-    - str
+    - "str?"
   api:
     endpoint: "str?"
     key: "str?"
     secret: "password?"
   mqtt:
-    enabled: bool
+    enabled: "bool?"
     host: "str?"
-    port: port
+    port: "port?"
     username: "str?"
     password: "password?"
   tak:
-    enabled: bool
+    enabled: "bool?"
     host: "str?"
-    port: port
-    protocol: list(tcp|tls|udp)
-    cot_type: str
-    stale_seconds: int(60,86400)
+    port: "port?"
+    protocol: "list(tcp|tls|udp)?"
+    cot_type: "str?"
+    stale_seconds: "int(60,86400)?"
     callsign_prefix: "str?"
-    contact_presence: bool
-    team_color: str
-    team_role: str
+    contact_presence: "bool?"
+    team_color: "str?"
+    team_role: "str?"
     tls_ca_file: "str?"
     tls_cert_file: "str?"
     tls_key_file: "str?"
     tls_p12_file: "str?"
     tls_p12_password: "password?"
-    tls_verify: bool
-    tls_check_hostname: bool
-  log_level: list(debug|info|warning|error)
+    tls_verify: "bool?"
+    tls_check_hostname: "bool?"
+  log_level: "list(debug|info|warning|error)?"
