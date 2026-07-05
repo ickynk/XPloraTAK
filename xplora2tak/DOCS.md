@@ -113,9 +113,15 @@ and longitude are in `msg.data.attributes`.
 
 ## Troubleshooting
 
-- **"Sign-in failed"** — wrong credentials, or the account has 2-step
-  verification pending in the app. Log in with the phone app once, then
-  retry.
+- **"Sign-in failed" / "Authentication failed."** — the API rejected the
+  credentials. Check, in order:
+  1. The exact same email/phone + password works in the Xplora phone app.
+  2. Accounts created with **Google or Apple sign-in have no password** and
+     cannot authenticate here — set a password in the Xplora app first.
+  3. `country_code` must be digits only, no `+` (e.g. `1`, `44`, `49`).
+  4. If you registered with a phone number, log in with
+     `country_code` + `phone_number` and leave `email` empty (and vice
+     versa).
 - **"Refusing to sign in again for another Ns"** — the login rate-limiter.
   Wait; it protects your IP.
 - **HTTP 403** — possible IP block. Stop the add-on for at least 24 h.

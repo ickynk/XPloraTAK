@@ -38,6 +38,14 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+LOGIN_HINTS = (
+    "Hints: use exactly the credentials that work in the Xplora phone app; "
+    "accounts created with Google/Apple sign-in have no password and cannot "
+    "log in here (set a password in the app first); country_code must have "
+    "no '+'; if you registered with a phone number, try phone login instead "
+    "of email (and vice versa)."
+)
+
 # Hard floor between login attempts. Re-authenticating in a tight loop is the
 # most likely way to get an IP banned, so even if the API keeps rejecting us
 # we refuse to sign in more often than this.
@@ -134,9 +142,11 @@ class XploraClient:
                 "Provide a password plus either an email address or "
                 "country_code + phone_number in the add-on configuration."
             )
-        self._email = email
-        self._country_code = country_code
-        self._phone_number = phone_number
+        # Normalize: stray whitespace and a '+' on the country code are the
+        # most common config mistakes and the API rejects them.
+        self._email = (email or "").strip()
+        self._country_code = (country_code or "").strip().lstrip("+")
+        self._phone_number = (phone_number or "").strip().replace(" ", "")
         self._password_md5 = hashlib.md5(password.encode()).hexdigest()
         self._user_lang = user_lang
         self._timezone = timezone_name
@@ -266,22 +276,30 @@ class XploraClient:
         self._token = None
         self._save_cache()
 
+        # Match pyxplora_api's proven payload semantics exactly: phone fields
+        # are empty strings when unused, but emailAddress must be JSON null
+        # (not "") or the server can take the email-auth path and reject the
+        # login with "Authentication failed."
         variables = {
             "countryPhoneNumber": self._country_code,
             "phoneNumber": self._phone_number,
             "password": self._password_md5,
-            "emailAddress": self._email,
+            "emailAddress": self._email or None,
             "userLang": self._user_lang,
             "timeZone": self._timezone,
             "client": "APP",
         }
-        _LOGGER.info("Signing in to Xplora API")
-        data = self._gql(SIGN_IN_MUTATION, variables, "signInWithEmailOrPhone")
+        _LOGGER.info(
+            "Signing in to Xplora API as %s",
+            self._email if self._email else f"+{self._country_code} {self._phone_number}",
+        )
+        try:
+            data = self._gql(SIGN_IN_MUTATION, variables, "signInWithEmailOrPhone")
+        except XploraAuthError as exc:
+            raise XploraAuthError(f"{exc} {LOGIN_HINTS}") from exc
         issue = data.get("signInWithEmailOrPhone")
         if not issue or not issue.get("token"):
-            raise XploraAuthError(
-                "Sign-in failed - check email/phone number and password"
-            )
+            raise XploraAuthError(f"Sign-in failed. {LOGIN_HINTS}")
         self._token = issue["token"]
         self._expire_at = _parse_epoch(issue.get("expireDate"))
         self._user = issue.get("user") or {}

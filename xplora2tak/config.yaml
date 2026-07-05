@@ -1,5 +1,5 @@
 name: Xplora → MQTT / TAK Bridge
-version: "1.0.0"
+version: "1.0.1"
 slug: xplora2tak
 description: >-
   Pulls watch locations from the Xplora cloud API and publishes them as
