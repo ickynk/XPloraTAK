@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0
+
+- **Native PKCS#12 support**: point `tls_p12_file` (+ `tls_p12_password`)
+  at the `.p12` bundle from TAK Server enrollment or a data package — no
+  more manual openssl conversion. The CA chain inside the bundle is used
+  automatically when `tls_ca_file` is not set.
+- Certificate paths are validated at startup: a missing file now fails
+  with a message naming the option and path, and a reminder that the
+  add-on can only see `/ssl` and `/share` (previously a bare
+  "[Errno 2] No such file or directory" at send time).
+- Clear error for a wrong `.p12` password, mentioning the usual TAK
+  default ("atakatak").
+
 ## 1.2.0
 
 - **Watches now appear in ATAK/WinTAK's contacts list.** With the new

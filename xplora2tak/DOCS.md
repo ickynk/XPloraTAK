@@ -52,8 +52,10 @@ tak:
   contact_presence: true     # show in ATAK/WinTAK contacts list
   team_color: Cyan
   team_role: Team Member
-  tls_ca_file: /ssl/tak/ca.pem
-  tls_cert_file: /ssl/tak/client.pem   # client cert (PEM) if your server requires it
+  tls_p12_file: /ssl/tak/client.p12    # easiest: the .p12 from TAK Server
+  tls_p12_password: atakatak
+  tls_ca_file: /ssl/tak/ca.pem         # or PEM files instead of .p12:
+  tls_cert_file: /ssl/tak/client.pem
   tls_key_file: /ssl/tak/client.key
   tls_verify: true
 log_level: info
@@ -110,10 +112,28 @@ Entities appear automatically (MQTT discovery):
 Set `tak.enabled: true` and point `host`/`port` at your TAK server:
 
 - `tcp` — plain CoT streaming input (TAK Server default port 8087).
-- `tls` — TLS input (default port 8089). Put your certificates in
-  Home Assistant's `/ssl` directory and reference them as `/ssl/...`.
-  PKCS#12 (`.p12`) files must be converted to PEM first:
-  `openssl pkcs12 -in client.p12 -out client.pem -clcerts -nodes`.
+- `tls` — TLS input (default port 8089; iTAK/ATAK call this "SSL" — same
+  thing). TAK Server requires a **client certificate** on this port.
+  Copy your certificate files into Home Assistant's **`ssl` folder** (via
+  the Samba add-on, File editor, or SSH) and reference them as
+  `/ssl/<filename>` — the add-on can only see `/ssl` and `/share`, so a
+  path anywhere else fails with "file not found".
+
+  The easiest route is the `.p12` bundle from your TAK Server (from
+  certificate enrollment or a data package) — no conversion needed:
+
+  ```yaml
+  tak:
+    protocol: tls
+    port: 8089
+    tls_p12_file: /ssl/tak/xplora-client.p12
+    tls_p12_password: atakatak        # the default for TAK Server bundles
+    tls_ca_file: /ssl/tak/truststore-root.pem   # or set tls_verify: false
+  ```
+
+  Alternatively use PEM files directly via `tls_cert_file` +
+  `tls_key_file`. If your server's certificate is self-signed and you
+  don't have the CA file, set `tls_verify: false`.
 - `udp` — one datagram per event (e.g. multicast-style inputs; unicast only).
 
 **Protocol and port must match.** TAK Server drops mismatched traffic
