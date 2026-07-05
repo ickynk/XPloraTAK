@@ -1,5 +1,5 @@
 name: Xplora → MQTT / TAK Bridge
-version: "1.0.2"
+version: "1.1.0"
 slug: xplora2tak
 description: >-
   Pulls watch locations from the Xplora cloud API and publishes them as
@@ -27,6 +27,10 @@ options:
   timezone: UTC
   poll_interval: 300
   watch_ids: []
+  api:
+    endpoint: ""
+    key: ""
+    secret: ""
   mqtt:
     enabled: true
     host: ""
@@ -57,6 +61,10 @@ schema:
   poll_interval: int(120,86400)
   watch_ids:
     - str
+  api:
+    endpoint: "str?"
+    key: "str?"
+    secret: "password?"
   mqtt:
     enabled: bool
     host: "str?"

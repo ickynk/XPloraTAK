@@ -58,12 +58,29 @@ log_level: info
 
 ### Authentication
 
-Use the same credentials as the Xplora smartphone app. Either fill in
-`email`, or `country_code` (e.g. `1` for the US, `49` for Germany — no `+`)
-plus `phone_number`. If both are given, email wins.
+Use the same credentials as the Xplora smartphone app. **Use `email` +
+`password`** — the current Xplora API no longer appears to accept phone
+number logins. The legacy phone path (`country_code`, e.g. `1` for the US —
+no `+`, plus `phone_number`) is kept as a fallback but may fail. If both
+are given, email wins.
 
 The auth token is cached in the add-on's private `/data` directory and
 survives restarts, so restarting the add-on does not trigger a new login.
+
+### API overrides (advanced)
+
+The add-on ships with the API endpoint and key pair known to work against
+the current (2026) Xplora backend. If Xplora moves the endpoint or rotates
+keys again, they can be overridden without a new release:
+
+```yaml
+api:
+  endpoint: https://api.prod.myxplora.com/api
+  key: ""
+  secret: ""
+```
+
+Leave all three empty to use the built-in defaults.
 
 ### Watches
 
@@ -118,10 +135,12 @@ and longitude are in `msg.data.attributes`.
   1. The exact same email/phone + password works in the Xplora phone app.
   2. Accounts created with **Google or Apple sign-in have no password** and
      cannot authenticate here — set a password in the Xplora app first.
-  3. `country_code` must be digits only, no `+` (e.g. `1`, `44`, `49`).
-  4. If you registered with a phone number, log in with
-     `country_code` + `phone_number` and leave `email` empty (and vice
-     versa).
+  3. Use **email login** — the current API no longer appears to accept
+     phone-number sign-ins. If your account has no email, add one in the
+     Xplora app.
+- **"Sign-in postponed for Ns"** — not an error: the add-on refuses to
+  sign in more than once per 15 minutes to protect your IP. It waits the
+  shown time and retries automatically; happens after quick restarts.
 - **"Refusing to sign in again for another Ns"** — the login rate-limiter.
   Wait; it protects your IP.
 - **HTTP 403** — possible IP block. Stop the add-on for at least 24 h.

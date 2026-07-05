@@ -30,20 +30,23 @@ import requests
 
 _LOGGER = logging.getLogger(__name__)
 
-ENDPOINT = "https://api.myxplora.com/api"
-API_KEY = "fc45d50304511edbf67a12b93c413b6a"
-API_SECRET = "1e9b6fe0327711ed959359c157878dcb"
+# Endpoint and key pair as used by clients verified working against the
+# 2026 API (the old api.myxplora.com host + 2022 key pair now yields
+# "Authentication failed."). Overridable via the add-on's api options.
+ENDPOINT = "https://api.prod.myxplora.com/api"
+API_KEY = "63fa1d10289711ea80b5992f808043b2"
+API_SECRET = "27ed7670379511eab4a0f367f8eb1312"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
 LOGIN_HINTS = (
-    "Hints: use exactly the credentials that work in the Xplora phone app; "
-    "accounts created with Google/Apple sign-in have no password and cannot "
-    "log in here (set a password in the app first); country_code must have "
-    "no '+'; if you registered with a phone number, try phone login instead "
-    "of email (and vice versa)."
+    "Hints: the current Xplora API only accepts email + password logins - "
+    "use the email registered on the account; accounts created with "
+    "Google/Apple sign-in have no password and cannot log in here (set a "
+    "password in the app first); use exactly the password that works in the "
+    "Xplora phone app."
 )
 
 # Hard floor between login attempts. Re-authenticating in a tight loop is the
@@ -51,9 +54,11 @@ LOGIN_HINTS = (
 # we refuse to sign in more often than this.
 MIN_LOGIN_INTERVAL = 15 * 60
 
-SIGN_IN_MUTATION = """
-mutation signInWithEmailOrPhone($countryPhoneNumber: String, $phoneNumber: String, $password: String!, $emailAddress: String, $client: ClientType!, $userLang: String!, $timeZone: String!) {
-  signInWithEmailOrPhone(countryPhoneNumber: $countryPhoneNumber, phoneNumber: $phoneNumber, password: $password, emailAddress: $emailAddress, client: $client, userLang: $userLang, timeZone: $timeZone) {
+# Email sign-in: the current API expects the WEB client type and no phone
+# variables at all on this path.
+EMAIL_SIGN_IN_MUTATION = """
+mutation signInWithEmailOrPhone($emailAddress: String, $password: String!, $client: ClientType!, $userLang: String!, $timeZone: String!) {
+  signInWithEmailOrPhone(emailAddress: $emailAddress, password: $password, client: $client, userLang: $userLang, timeZone: $timeZone) {
     id
     token
     issueDate
@@ -68,6 +73,40 @@ mutation signInWithEmailOrPhone($countryPhoneNumber: String, $phoneNumber: Strin
           phoneNumber
         }
       }
+    }
+    w360 {
+      token
+      secret
+      qid
+    }
+  }
+}
+"""
+
+# Legacy phone sign-in. Reportedly no longer accepted by the current API,
+# kept as a fallback for accounts that cannot use email.
+PHONE_SIGN_IN_MUTATION = """
+mutation signInWithEmailOrPhone($countryPhoneNumber: String, $phoneNumber: String, $password: String!, $client: ClientType!, $userLang: String!, $timeZone: String!) {
+  signInWithEmailOrPhone(countryPhoneNumber: $countryPhoneNumber, phoneNumber: $phoneNumber, password: $password, client: $client, userLang: $userLang, timeZone: $timeZone) {
+    id
+    token
+    issueDate
+    expireDate
+    user {
+      id
+      name
+      children {
+        ward {
+          id
+          name
+          phoneNumber
+        }
+      }
+    }
+    w360 {
+      token
+      secret
+      qid
     }
   }
 }
@@ -122,6 +161,17 @@ class XploraAuthError(XploraError):
     """Credentials rejected or token invalid and re-login not yet allowed."""
 
 
+class XploraLoginRateLimited(XploraAuthError):
+    """A sign-in was refused by the local rate limiter; retry after `wait`."""
+
+    def __init__(self, wait: float) -> None:
+        self.wait = max(1.0, wait)
+        super().__init__(
+            f"Sign-in postponed for {int(self.wait)}s "
+            "(login rate limit, protects against IP bans)"
+        )
+
+
 class XploraBlockedError(XploraError):
     """The API returned 403 - possibly an IP block. Back off hard."""
 
@@ -136,6 +186,9 @@ class XploraClient:
         user_lang: str = "en-US",
         timezone_name: str = "UTC",
         cache_path: str = "/data/xplora_token.json",
+        endpoint: str = "",
+        api_key: str = "",
+        api_secret: str = "",
     ) -> None:
         if not password or not (email or (country_code and phone_number)):
             raise XploraAuthError(
@@ -152,8 +205,12 @@ class XploraClient:
         self._user_lang = user_lang
         self._timezone = timezone_name
         self._cache_path = cache_path
+        self._endpoint = (endpoint or "").strip() or ENDPOINT
+        self._api_key = (api_key or "").strip() or API_KEY
+        self._api_secret = (api_secret or "").strip() or API_SECRET
 
         self._token: Optional[str] = None
+        self._bearer_secret: str = self._api_secret
         self._expire_at: float = 0.0
         self._user: dict[str, Any] = {}
         self._last_login_attempt: float = 0.0
@@ -175,6 +232,7 @@ class XploraClient:
             _LOGGER.info("Cached token belongs to different credentials; ignoring")
             return
         self._token = data.get("token")
+        self._bearer_secret = data.get("bearer_secret") or self._api_secret
         self._expire_at = float(data.get("expire_at", 0))
         self._user = data.get("user", {})
         self._last_login_attempt = float(data.get("last_login_attempt", 0))
@@ -190,6 +248,7 @@ class XploraClient:
         data = {
             "account_hash": self._account_hash(),
             "token": self._token,
+            "bearer_secret": self._bearer_secret,
             "expire_at": self._expire_at,
             "user": self._user,
             "last_login_attempt": self._last_login_attempt,
@@ -203,7 +262,10 @@ class XploraClient:
             _LOGGER.warning("Could not persist token cache: %s", exc)
 
     def _account_hash(self) -> str:
-        ident = f"{self._email}|{self._country_code}|{self._phone_number}|{self._password_md5}"
+        ident = (
+            f"{self._email}|{self._country_code}|{self._phone_number}|"
+            f"{self._password_md5}|{self._endpoint}|{self._api_key}"
+        )
         return hashlib.sha256(ident.encode()).hexdigest()
 
     # ------------------------------------------------------------- transport
@@ -211,9 +273,9 @@ class XploraClient:
     def _request_headers(self) -> dict[str, str]:
         now = datetime.now(timezone.utc)
         if self._token:
-            auth = f"Bearer {self._token}:{API_SECRET}"
+            auth = f"Bearer {self._token}:{self._bearer_secret}"
         else:
-            auth = f"Open {API_KEY}:{API_SECRET}"
+            auth = f"Open {self._api_key}:{self._api_secret}"
         return {
             "H-Date": now.strftime("%a, %d %b %Y %H:%M:%S GMT"),
             "H-Tid": str(math.floor(time.time())),
@@ -231,7 +293,7 @@ class XploraClient:
         }
         try:
             resp = self._session.post(
-                ENDPOINT,
+                self._endpoint,
                 json=payload,
                 headers=self._request_headers(),
                 timeout=60,
@@ -256,6 +318,7 @@ class XploraClient:
 
         errors = body.get("errors") or []
         if errors:
+            _LOGGER.debug("GraphQL error response: %s", json.dumps(errors))
             messages = "; ".join(str(e.get("message", e)) for e in errors)
             lowered = messages.lower()
             if "auth" in lowered or "token" in lowered or "permission" in lowered:
@@ -269,39 +332,53 @@ class XploraClient:
     def login(self) -> None:
         wait = MIN_LOGIN_INTERVAL - (time.time() - self._last_login_attempt)
         if wait > 0:
-            raise XploraAuthError(
-                f"Refusing to sign in again for another {int(wait)}s "
-                "(login rate limit, protects against IP bans)"
-            )
+            raise XploraLoginRateLimited(wait)
         self._last_login_attempt = time.time()
         self._token = None
         self._save_cache()
 
-        # Match pyxplora_api's proven payload semantics exactly: phone fields
-        # are empty strings when unused, but emailAddress must be JSON null
-        # (not "") or the server can take the email-auth path and reject the
-        # login with "Authentication failed."
-        variables = {
-            "countryPhoneNumber": self._country_code,
-            "phoneNumber": self._phone_number,
-            "password": self._password_md5,
-            "emailAddress": self._email or None,
-            "userLang": self._user_lang,
-            "timeZone": self._timezone,
-            "client": "APP",
-        }
-        _LOGGER.info(
-            "Signing in to Xplora API as %s",
-            self._email if self._email else f"+{self._country_code} {self._phone_number}",
-        )
+        # The current (2026) API distinguishes the two sign-in paths: email
+        # logins use the WEB client type with no phone variables at all;
+        # the legacy phone path is reportedly no longer accepted but is kept
+        # as a fallback.
+        if self._email:
+            mutation = EMAIL_SIGN_IN_MUTATION
+            variables = {
+                "emailAddress": self._email,
+                "password": self._password_md5,
+                "userLang": self._user_lang,
+                "timeZone": self._timezone,
+                "client": "WEB",
+            }
+            identity = self._email
+        else:
+            mutation = PHONE_SIGN_IN_MUTATION
+            variables = {
+                "countryPhoneNumber": self._country_code,
+                "phoneNumber": self._phone_number,
+                "password": self._password_md5,
+                "userLang": self._user_lang,
+                "timeZone": self._timezone,
+                "client": "APP",
+            }
+            identity = f"+{self._country_code} {self._phone_number}"
+            _LOGGER.warning(
+                "Signing in by phone number; the current Xplora API may only "
+                "accept email logins - configure auth.email if this fails"
+            )
+        _LOGGER.info("Signing in to Xplora API as %s", identity)
         try:
-            data = self._gql(SIGN_IN_MUTATION, variables, "signInWithEmailOrPhone")
+            data = self._gql(mutation, variables, "signInWithEmailOrPhone")
         except XploraAuthError as exc:
             raise XploraAuthError(f"{exc} {LOGIN_HINTS}") from exc
         issue = data.get("signInWithEmailOrPhone")
         if not issue or not issue.get("token"):
             raise XploraAuthError(f"Sign-in failed. {LOGIN_HINTS}")
         self._token = issue["token"]
+        # Subsequent requests must be signed with the w360 secret when the
+        # account has one; the static API secret is only the fallback.
+        w360 = issue.get("w360") or {}
+        self._bearer_secret = w360.get("secret") or self._api_secret
         self._expire_at = _parse_epoch(issue.get("expireDate"))
         self._user = issue.get("user") or {}
         self._save_cache()

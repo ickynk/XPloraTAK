@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.0
+
+- **Fix sign-in against the current (2026) Xplora API.** The protocol
+  changed since the archived pyxplora_api era; verified against clients
+  working today:
+  - endpoint moved to `https://api.prod.myxplora.com/api`,
+  - updated API key/secret pair,
+  - email sign-ins use the `WEB` client type with no phone variables,
+  - subsequent requests are signed with the account's `w360` secret when
+    present.
+- Phone-number login kept as a legacy fallback with a warning (the current
+  API reportedly accepts email logins only).
+- New optional `api:` config section to override endpoint/key/secret
+  without a new release.
+- Restarting the add-on shortly after a failed sign-in now logs a calm
+  "Sign-in postponed for Ns" info message and waits exactly that long,
+  instead of an error with a fixed backoff.
+- GraphQL error responses are logged verbatim at debug level.
+
 ## 1.0.2
 
 - Lowercase the configured email address before sign-in. The Xplora API
