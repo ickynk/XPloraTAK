@@ -174,6 +174,15 @@ false` and consume the tracker entity in Node-RED, e.g. with a
 `server-state-changed` node watching `device_tracker.xplora_<name>`; latitude
 and longitude are in `msg.data.attributes`.
 
+## Updating
+
+New versions land on the repository's default branch; Home Assistant
+re-reads it periodically. To pull an update immediately: **Settings →
+Add-ons → Add-on store → ⋮ (top right) → Check for updates**, then press
+*Update* on the add-on page. Updating **preserves your configuration** —
+never uninstall/reinstall to update, as uninstalling wipes the saved
+options and the cached Xplora token.
+
 ## Troubleshooting
 
 - **"Sign-in failed" / "Authentication failed."** — the API rejected the
@@ -194,3 +203,14 @@ and longitude are in `msg.data.attributes`.
 - **No entities in HA** — check the Mosquitto add-on is running and that the
   MQTT integration is set up in Home Assistant (Settings → Devices &
   Services).
+- **TLS connects but nothing appears in TAK** — two usual causes:
+  1. *Client certificate rejected after the handshake* (TLS 1.3 reports
+     this only as a disconnect). The add-on detects this and logs
+     "TAK server closed the connection ... client certificate was not
+     accepted" — fix by using a client cert issued by the same TAK server
+     (enrollment or `makeCert.sh client`), not a cert from elsewhere.
+  2. *Group filtering*: TAK Server only forwards events between users
+     that share a group. In the server's admin UI check that the
+     add-on's certificate user and your ATAK/iTAK user are in a common
+     group (e.g. both `__ANON__`). The server's
+     `takserver-messaging.log` shows both problems explicitly.

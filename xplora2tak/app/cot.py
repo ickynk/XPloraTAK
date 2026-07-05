@@ -81,11 +81,17 @@ def build_cot(
 
 
 class TakSender:
-    """Fire-and-forget CoT delivery. A fresh connection is made per batch,
-    which is fine at multi-minute polling intervals and avoids stale-socket
-    handling."""
+    """CoT delivery over a persistent connection, like a real TAK client.
+
+    Holding the connection open matters for two reasons: TAK Server treats
+    streaming inputs as sessions (a contact stays "online" while its
+    connection lives), and reading from the socket is the only way to learn
+    whether the server actually accepted us - with TLS 1.3 a rejected
+    client certificate surfaces as a disconnect *after* a successful
+    handshake, invisible to a write-and-close sender."""
 
     def __init__(self, options: dict[str, Any]) -> None:
+        self._sock: Optional[socket.socket] = None
         self.host: str = options.get("host") or ""
         self.port: int = int(options.get("port") or 8087)
         self.protocol: str = (options.get("protocol") or "tcp").lower()
@@ -190,24 +196,55 @@ class TakSender:
     def send(self, events: list[bytes]) -> None:
         if not events:
             return
-        payload = b"".join(events)
         if self.protocol == "udp":
             self._send_udp(events)
-        elif self.protocol == "tls":
-            self._send_stream(payload, use_tls=True)
-        else:
-            self._send_stream(payload, use_tls=False)
-        _LOGGER.debug("Sent %d CoT event(s) to %s:%d", len(events), self.host, self.port)
+            _LOGGER.debug(
+                "Sent %d CoT event(s) to %s:%d", len(events), self.host, self.port
+            )
+            return
+
+        payload = b"".join(events)
+        last_err: Optional[OSError] = None
+        for attempt in (1, 2):
+            try:
+                if self._sock is None:
+                    self._connect()
+                self._sock.sendall(payload)
+                self._drain()
+                _LOGGER.debug(
+                    "Sent %d CoT event(s) to %s:%d",
+                    len(events),
+                    self.host,
+                    self.port,
+                )
+                return
+            except OSError as exc:
+                last_err = exc
+                self._close()
+                if attempt == 1:
+                    _LOGGER.debug("TAK connection lost (%s), reconnecting", exc)
+        raise last_err  # type: ignore[misc]
+
+    def close(self) -> None:
+        self._close()
+
+    def _close(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
 
     def _send_udp(self, events: list[bytes]) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             for event in events:
                 sock.sendto(event, (self.host, self.port))
 
-    def _send_stream(self, payload: bytes, use_tls: bool) -> None:
+    def _connect(self) -> None:
         raw = socket.create_connection((self.host, self.port), timeout=15)
         try:
-            if use_tls:
+            if self.protocol == "tls":
                 context = ssl.create_default_context(
                     cafile=self.tls_ca_file or None
                 )
@@ -241,13 +278,45 @@ class TakSender:
                 )
             else:
                 sock = raw
-            sock.sendall(payload)
-            if use_tls:
-                # Send TLS close_notify so the server flushes and processes
-                # everything before the connection drops.
-                try:
-                    sock.unwrap()
-                except (OSError, ssl.SSLError):
-                    pass
-        finally:
+        except BaseException:
             raw.close()
+            raise
+        sock.settimeout(15)
+        self._sock = sock
+        _LOGGER.info(
+            "Connected to TAK server %s:%d (%s), holding connection open",
+            self.host,
+            self.port,
+            self.protocol,
+        )
+
+    def _drain(self) -> None:
+        """Read whatever the server pushed at us (other clients' SA traffic).
+
+        This keeps the receive buffer empty on a long-lived connection and,
+        crucially, detects the server hanging up on us - which after a
+        successful TLS 1.3 handshake almost always means the client
+        certificate was not accepted."""
+        sock = self._sock
+        assert sock is not None
+        sock.settimeout(1.5)
+        try:
+            while True:
+                data = sock.recv(65536)
+                if not data:
+                    raise OSError(
+                        "TAK server closed the connection right after our "
+                        "data. This usually means the client certificate was "
+                        "not accepted (wrong CA / not in the server "
+                        "truststore) or the account's groups don't allow the "
+                        "connection - check the TAK server's messaging log."
+                    )
+                _LOGGER.debug(
+                    "Received %d bytes from TAK server (connection accepted "
+                    "and healthy)",
+                    len(data),
+                )
+        except TimeoutError:
+            pass  # nothing pushed to us right now - connection is alive
+        finally:
+            sock.settimeout(15)
