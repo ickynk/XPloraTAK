@@ -18,6 +18,7 @@ from xplora import (
     XploraBlockedError,
     XploraClient,
     XploraError,
+    XploraLoginRateLimited,
 )
 
 _LOGGER = logging.getLogger("xplora2tak")
@@ -103,6 +104,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_signal)
 
     auth = options.get("auth") or {}
+    api = options.get("api") or {}
     try:
         client = XploraClient(
             password=auth.get("password") or "",
@@ -111,6 +113,9 @@ def main() -> int:
             phone_number=auth.get("phone_number") or "",
             user_lang=options.get("user_lang") or "en-US",
             timezone_name=options.get("timezone") or "UTC",
+            endpoint=api.get("endpoint") or "",
+            api_key=api.get("key") or "",
+            api_secret=api.get("secret") or "",
         )
     except XploraAuthError as exc:
         _LOGGER.error("%s", exc)
@@ -244,6 +249,11 @@ def main() -> int:
         except XploraBlockedError as exc:
             _LOGGER.error("%s", exc)
             delay = BLOCKED_BACKOFF
+        except XploraLoginRateLimited as exc:
+            # Not an API rejection - our own guard after a recent attempt
+            # (e.g. the add-on was restarted). Wait it out, then retry.
+            _LOGGER.info("%s", exc)
+            delay = exc.wait + 5
         except XploraAuthError as exc:
             failures += 1
             _LOGGER.error("Authentication problem: %s", exc)
