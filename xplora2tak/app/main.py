@@ -273,6 +273,8 @@ def main() -> int:
 
     if publisher:
         publisher.close()
+    if sender:
+        sender.close()
     return 0
 
 

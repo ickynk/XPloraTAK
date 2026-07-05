@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.0
+
+- **Persistent TAK connection with acceptance detection.** The sender now
+  holds one long-lived connection like a real TAK client instead of
+  connecting per batch. This makes the watch a proper online contact and,
+  critically, detects the failure mode where a TLS 1.3 handshake succeeds
+  but the server rejects the client certificate afterwards and silently
+  discards everything: that now logs "TAK server closed the connection
+  ... client certificate was not accepted" instead of a false "Sent".
+- Inbound traffic pushed by the server is drained each cycle (debug log
+  "connection accepted and healthy") and one automatic reconnect is
+  attempted per send.
+
 ## 1.3.1
 
 - Fix "certificate verify failed: Hostname mismatch" when connecting to a
