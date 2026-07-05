@@ -95,6 +95,11 @@ class TakSender:
         self.tls_p12_file: str = options.get("tls_p12_file") or ""
         self.tls_p12_password: str = options.get("tls_p12_password") or ""
         self.tls_verify: bool = bool(options.get("tls_verify", True))
+        # TAK Server certificates are minted by its own CA for an internal
+        # name ("takserver", a LAN IP), which never matches the public
+        # hostname clients dial. ATAK/iTAK therefore verify the CA chain but
+        # not the hostname - default to the same behavior.
+        self.tls_check_hostname: bool = bool(options.get("tls_check_hostname", False))
         if not self.host:
             raise ValueError("TAK output enabled but tak.host is not set")
 
@@ -209,11 +214,25 @@ class TakSender:
                 if not self.tls_verify:
                     context.check_hostname = False
                     context.verify_mode = ssl.CERT_NONE
+                elif not self.tls_check_hostname:
+                    context.check_hostname = False
                 if self.tls_cert_file:
                     context.load_cert_chain(
                         self.tls_cert_file, self.tls_key_file or None
                     )
-                sock = context.wrap_socket(raw, server_hostname=self.host)
+                try:
+                    sock = context.wrap_socket(raw, server_hostname=self.host)
+                except ssl.SSLCertVerificationError as exc:
+                    hint = (
+                        "set tak.tls_check_hostname: false (default) to accept "
+                        "a TAK server certificate issued for a different name"
+                        if "hostname mismatch" in str(exc).lower()
+                        else "point tak.tls_ca_file at your TAK server's CA/"
+                        "truststore PEM, or set tak.tls_verify: false"
+                    )
+                    raise OSError(
+                        f"TLS certificate verification failed: {exc}. Hint: {hint}"
+                    ) from exc
                 _LOGGER.debug(
                     "TLS handshake with %s:%d ok (%s)",
                     self.host,

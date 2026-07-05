@@ -1,5 +1,5 @@
 name: Xplora → MQTT / TAK Bridge
-version: "1.3.0"
+version: "1.3.1"
 slug: xplora2tak
 description: >-
   Pulls watch locations from the Xplora cloud API and publishes them as
@@ -54,6 +54,7 @@ options:
     tls_p12_file: ""
     tls_p12_password: ""
     tls_verify: true
+    tls_check_hostname: false
   log_level: info
 schema:
   auth:
@@ -93,4 +94,5 @@ schema:
     tls_p12_file: "str?"
     tls_p12_password: "password?"
     tls_verify: bool
+    tls_check_hostname: bool
   log_level: list(debug|info|warning|error)

@@ -58,6 +58,7 @@ tak:
   tls_cert_file: /ssl/tak/client.pem
   tls_key_file: /ssl/tak/client.key
   tls_verify: true
+  tls_check_hostname: false  # TAK certs rarely match the public hostname
 log_level: info
 ```
 
@@ -134,6 +135,13 @@ Set `tak.enabled: true` and point `host`/`port` at your TAK server:
   Alternatively use PEM files directly via `tls_cert_file` +
   `tls_key_file`. If your server's certificate is self-signed and you
   don't have the CA file, set `tls_verify: false`.
+
+  **Hostname checking is off by default** (`tls_check_hostname: false`):
+  TAK Server certificates are issued by its own CA for an internal name
+  like `takserver`, which never matches the public hostname or DDNS name
+  you dial — ATAK/iTAK behave the same way and only verify the CA chain.
+  Set `tls_check_hostname: true` only if your server certificate really
+  contains the hostname you connect to.
 - `udp` — one datagram per event (e.g. multicast-style inputs; unicast only).
 
 **Protocol and port must match.** TAK Server drops mismatched traffic
