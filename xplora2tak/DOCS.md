@@ -45,10 +45,13 @@ tak:
   enabled: false
   host: tak.example.com
   port: 8087
-  protocol: tcp              # tcp | tls | udp
+  protocol: tcp              # tcp | tls | udp (must match the port!)
   cot_type: a-f-G-U-C
   stale_seconds: 900
   callsign_prefix: ""        # e.g. "KID-" -> callsign "KID-Emma"
+  contact_presence: true     # show in ATAK/WinTAK contacts list
+  team_color: Cyan
+  team_role: Team Member
   tls_ca_file: /ssl/tak/ca.pem
   tls_cert_file: /ssl/tak/client.pem   # client cert (PEM) if your server requires it
   tls_key_file: /ssl/tak/client.key
@@ -113,13 +116,28 @@ Set `tak.enabled: true` and point `host`/`port` at your TAK server:
   `openssl pkcs12 -in client.p12 -out client.pem -clcerts -nodes`.
 - `udp` — one datagram per event (e.g. multicast-style inputs; unicast only).
 
+**Protocol and port must match.** TAK Server drops mismatched traffic
+*silently* — the add-on can log "Sent" while the server discards every
+byte. Defaults are:
+
+| Input           | `protocol` | `port` | Needs certs |
+|-----------------|-----------|--------|-------------|
+| Streaming TCP   | `tcp`     | 8087   | no          |
+| Streaming TLS   | `tls`     | 8089   | yes (client cert + CA) |
+
+The add-on warns at startup if it sees `tcp`+8089 or `tls`+8087.
+
 Each watch becomes a CoT event with `uid=XPLORA-<watch-id>`, the watch name
 as callsign, the location accuracy as circular error (`ce`), and battery in
 the `<status>` element. Events are re-sent every poll so markers stay fresh;
 `stale_seconds` controls when a marker grays out if updates stop.
 
-`cot_type` defaults to `a-f-G-U-C` (friendly ground unit). Change it to
-whatever your TAK deployment expects.
+With `contact_presence: true` (the default) the event is shaped like a TAK
+client's own position report (PLI), so the watch shows up in ATAK/WinTAK's
+**contacts list** as a trackable team member — with `team_color` (White,
+Yellow, Orange, Magenta, Red, Maroon, Purple, Dark Blue, Blue, Cyan, Teal,
+Green, Dark Green, Brown) and `team_role`. Set `contact_presence: false`
+for a plain map marker instead (uses `cot_type`, default `a-f-G-U-C`).
 
 ### Node-RED
 

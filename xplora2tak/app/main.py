@@ -150,6 +150,9 @@ def main() -> int:
     cot_type = tak_opts.get("cot_type") or "a-f-G-U-C"
     stale_seconds = int(tak_opts.get("stale_seconds") or 900)
     callsign_prefix = tak_opts.get("callsign_prefix") or ""
+    contact_presence = bool(tak_opts.get("contact_presence", True))
+    team_color = tak_opts.get("team_color") or "Cyan"
+    team_role = tak_opts.get("team_role") or "Team Member"
 
     _LOGGER.info(
         "Polling every %ds (passive reads only). Outputs: mqtt=%s tak=%s",
@@ -225,6 +228,9 @@ def main() -> int:
                             fix_time=fix_dt,
                             stale_seconds=stale_seconds,
                             remarks=" | ".join(remarks_bits),
+                            contact_presence=contact_presence,
+                            team_color=team_color,
+                            team_role=team_role,
                         )
                     )
                 if is_new:

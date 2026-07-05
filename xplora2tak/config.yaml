@@ -1,5 +1,5 @@
 name: Xplora → MQTT / TAK Bridge
-version: "1.1.0"
+version: "1.2.0"
 slug: xplora2tak
 description: >-
   Pulls watch locations from the Xplora cloud API and publishes them as
@@ -45,6 +45,9 @@ options:
     cot_type: a-f-G-U-C
     stale_seconds: 900
     callsign_prefix: ""
+    contact_presence: true
+    team_color: Cyan
+    team_role: Team Member
     tls_ca_file: ""
     tls_cert_file: ""
     tls_key_file: ""
@@ -79,6 +82,9 @@ schema:
     cot_type: str
     stale_seconds: int(60,86400)
     callsign_prefix: "str?"
+    contact_presence: bool
+    team_color: str
+    team_role: str
     tls_ca_file: "str?"
     tls_cert_file: "str?"
     tls_key_file: "str?"
