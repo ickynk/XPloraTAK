@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0
+
+- **Watches now appear in ATAK/WinTAK's contacts list.** With the new
+  `contact_presence: true` default, CoT events are shaped like a TAK
+  client's own position report (PLI: `takv`, routable contact endpoint,
+  `uid Droid`, `__group`), so each watch is a trackable team member with
+  configurable `team_color` and `team_role`. Set `contact_presence: false`
+  for the old plain-marker behavior.
+- Warn at startup on the classic protocol/port mismatch (`tcp` with port
+  8089 or `tls` with 8087) — TAK Server silently discards mismatched
+  traffic, which looks like "sent but nothing on the map".
+- TLS connections now finish with a proper close_notify so the server
+  flushes events before the connection drops; TLS handshake details are
+  logged at debug level.
+
 ## 1.1.0
 
 - **Fix sign-in against the current (2026) Xplora API.** The protocol

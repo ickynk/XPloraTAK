@@ -31,15 +31,34 @@ def build_cot(
     fix_time: Optional[datetime] = None,
     stale_seconds: int = 900,
     remarks: str = "",
+    contact_presence: bool = True,
+    team_color: str = "Cyan",
+    team_role: str = "Team Member",
 ) -> bytes:
-    """Return a CoT <event> document as UTF-8 bytes."""
+    """Return a CoT <event> document as UTF-8 bytes.
+
+    With ``contact_presence`` (default) the event is shaped like a TAK
+    client's own position report (PLI): it carries ``<takv>``, a
+    server-routable ``<contact endpoint>``, ``<uid Droid>`` and
+    ``<__group>``. That is what makes the callsign appear in ATAK/WinTAK's
+    contacts list instead of being just an anonymous map marker.
+    """
     now = datetime.now(timezone.utc)
     start = fix_time or now
     stale = now + timedelta(seconds=stale_seconds)
 
     ce = f"{accuracy_m:.1f}" if accuracy_m and accuracy_m > 0 else UNKNOWN
 
-    detail_parts = [f"<contact callsign={quoteattr(callsign)}/>"]
+    if contact_presence:
+        detail_parts = [
+            '<takv device="Xplora watch" platform="xplora2tak" os="linux" version="1.2.0"/>',
+            f'<contact callsign={quoteattr(callsign)} endpoint="*:-1:stcp"/>',
+            f"<uid Droid={quoteattr(callsign)}/>",
+            '<precisionlocation altsrc="GPS" geopointsrc="GPS"/>',
+            f"<__group name={quoteattr(team_color)} role={quoteattr(team_role)}/>",
+        ]
+    else:
+        detail_parts = [f"<contact callsign={quoteattr(callsign)}/>"]
     if battery is not None:
         detail_parts.append(f'<status battery="{int(battery)}"/>')
     if remarks:
@@ -75,6 +94,20 @@ class TakSender:
         self.tls_verify: bool = bool(options.get("tls_verify", True))
         if not self.host:
             raise ValueError("TAK output enabled but tak.host is not set")
+        # The classic misconfiguration: TAK Server listens for plain TCP on
+        # 8087 and TLS (client certs required) on 8089. Bytes sent with the
+        # wrong protocol are silently discarded server-side, so warn loudly.
+        if self.protocol == "tcp" and self.port == 8089:
+            _LOGGER.warning(
+                "tak.port 8089 is normally the TLS input but tak.protocol is "
+                "'tcp' - the server will silently drop these events. Set "
+                "protocol: tls (with certificates) or port: 8087."
+            )
+        elif self.protocol == "tls" and self.port == 8087:
+            _LOGGER.warning(
+                "tak.port 8087 is normally the plain-TCP input but "
+                "tak.protocol is 'tls' - set protocol: tcp or port: 8089."
+            )
 
     def send(self, events: list[bytes]) -> None:
         if not events:
@@ -108,8 +141,21 @@ class TakSender:
                         self.tls_cert_file, self.tls_key_file or None
                     )
                 sock = context.wrap_socket(raw, server_hostname=self.host)
+                _LOGGER.debug(
+                    "TLS handshake with %s:%d ok (%s)",
+                    self.host,
+                    self.port,
+                    sock.version(),
+                )
             else:
                 sock = raw
             sock.sendall(payload)
+            if use_tls:
+                # Send TLS close_notify so the server flushes and processes
+                # everything before the connection drops.
+                try:
+                    sock.unwrap()
+                except (OSError, ssl.SSLError):
+                    pass
         finally:
             raw.close()
